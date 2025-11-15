@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -11,7 +12,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
-<link rel="stylesheet" href="style.css">
+
+       <link rel="stylesheet" href="style.css">
       
 </head>
 <body class="overflow-hidden">
@@ -1794,12 +1796,21 @@
                                                 console.log("Opponent disconnected, but status is 'waiting'. Graceful exit confirmed.");
                                                 return;
                                             }
+                                            // --------------------------------------------------
+                                            // --- YAHAN HAI AAPKA FIX ---
+                                            // Agar status 'playing' hai, toh host ko winner banayein
+                                            // --------------------------------------------------
+                                            else if (currentData.status === 'playing') {
+                                                console.log("Opponent disconnected during 'playing' state. Declaring current player as winner.");
+                                                handleOpponentAbandonment(currentData);
+                                                return; 
+                                            }
                                     }
                                 } catch (e) { // <-- YEH HAI BUG FIX
                                     console.error("Error checking room status during grace period:", e);
                                 }
  
-                                }, 20000); // <-- 8s se 20s kar diya (Mobile disconnect fix)
+                                }, 6000); // <-- 20s se 6s kar diya (Aapke request ke mutabik)
                                 
                               
                             }
