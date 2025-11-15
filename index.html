@@ -12,7 +12,6 @@
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
 
-       
        <style>
         
 :root {
@@ -4354,21 +4353,12 @@ h3 {
                                                 console.log("Opponent disconnected, but status is 'waiting'. Graceful exit confirmed.");
                                                 return;
                                             }
-                                            // --------------------------------------------------
-                                            // --- YAHAN HAI AAPKA FIX ---
-                                            // Agar status 'playing' hai, toh host ko winner banayein
-                                            // --------------------------------------------------
-                                            else if (currentData.status === 'playing') {
-                                                console.log("Opponent disconnected during 'playing' state. Declaring current player as winner.");
-                                                handleOpponentAbandonment(currentData);
-                                                return; 
-                                            }
                                     }
                                 } catch (e) { // <-- YEH HAI BUG FIX
                                     console.error("Error checking room status during grace period:", e);
                                 }
  
-                                }, 6000); // <-- 20s se 6s kar diya (Aapke request ke mutabik)
+                                }, 20000); // <-- 8s se 20s kar diya (Mobile disconnect fix)
                                 
                               
                             }
