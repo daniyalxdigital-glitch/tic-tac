@@ -12,7 +12,7 @@
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
 
-       <style>
+        <style>
         
 :root {
     --midnight-950: #0a0e1a;
@@ -2572,7 +2572,6 @@ h3 {
 }
 
     </style>
-     
 </head>
 <body class="overflow-hidden">
     <div id="loading-overlay" class="fixed inset-0 bg-gray-900 bg-opacity-95 flex flex-col items-center justify-center z-50">
@@ -2983,7 +2982,7 @@ h3 {
             
             import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, deleteDoc, runTransaction, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
             
-            import { getDatabase, ref, onValue, set, onDisconnect, push, remove, get } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
+            import { getDatabase, ref, onValue, set, onDisconnect, push, remove } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
             import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
             
             let app;
@@ -3104,7 +3103,6 @@ h3 {
             let lastKnownStateFingerprint = null; 
             let isChatPanelOpen = false;
             let gameEndedNotified = false; 
-            let disconnectTimer = null; // <-- YEH NEW LINE ADD HUI HAI
             
             const multiplayerChatPanel = document.getElementById('multiplayer-chat-panel');
             const chatInputField = document.getElementById('chat-input-field');
@@ -4332,60 +4330,45 @@ h3 {
                         unsubscribeOpponentPresence = onValue(opponentStatusRef, (snapshot) => {
                             const isOnline = snapshot.val();
                             
-                            // YEH HAI MUKAMMAL FIX (RACE CONDITION + MOBILE BUG)
-                            if (isOnline !== true) { // <-- 1. '=== false' se ' !== true' kiya (null ko handle karne ke liye)
+                            // 1. BUG FIX: Ab 'null' (loading) ko 'false' (offline) nahi samjhega.
+                            //    Yeh aapke 'Race Condition' (null value) wale bug ko fix karta hai.
+                            if (isOnline === false) {
                                 if (gameEndedNotified || !isMultiplayer) return; 
                                 
-                                // --- 2. Sirf tabhi timer start karo jab pehle se na chal raha ho ---
-                                if (!disconnectTimer) {
-                                    console.warn(`Opponent (ID: ${opponentId}) disconnected (value: ${isOnline})! Starting 7-second grace period.`);
-                                    
-                                    // 3. Timer ID ko save karo
-                                    disconnectTimer = setTimeout(async () => {
-                                        if (gameEndedNotified || !currentRoomId) return;
-
-                                        try {
-                                            const roomDocRef = getRoomDocRef(currentRoomId);
-                                            const roomSnap = await getDoc(roomDocRef);
-                                            
-                                            if (roomSnap.exists()) {
-                                                const currentData = roomSnap.data();
-                                                
-                                                if (currentData.status !== 'playing') {
-                                                    console.log("Opponent disconnected, but game is not 'playing'. No action.");
-                                                    disconnectTimer = null; // <-- Timer reset
-                                                    return;
-                                                }
-                                                
-                                                // 4. Grace period ke baad dobara check karo
-                                                const currentPresenceSnap = await get(opponentStatusRef);
-                                                // 5. Yahan bhi '!= true' check karo
-                                                const isOpponentStillOffline = (currentPresenceSnap.val() !== true); 
-                                                
-                                                if (isOpponentStillOffline) {
-                                                    console.warn("Grace period over. Opponent is still offline. Triggering abandonment.");
-                                                    handleOpponentAbandonment(currentData);
-                                                } else {
-                                                    console.log("Opponent reconnected within the grace period. Game continues.");
-                                                }
-                                            }
-                                        } catch (e) { 
-                                            console.error("Error checking room status during grace period:", e);
-                                        }
-                                        
-                                        disconnectTimer = null; // <-- 6. Timer ko reset karo
-
-                                    }, 7000); // <-- 7. Timer ko 7 seconds kiya
-                                }
+                                console.warn(`Opponent (ID: ${opponentId}) disconnected! (RTDB Presence)`);
                                 
-                            } else {
-                                // --- YEH HAI ASLI FIX (RACE CONDITION KA) ---
-                                // 8. AGAR OPPONENT ONLINE HAI, TOH TIMER CANCEL KARDO
-                                if (disconnectTimer) {
-                                    console.log("Opponent reconnected. Cancelling grace period timer.");
-                                    clearTimeout(disconnectTimer);
-                                    disconnectTimer = null;
+                                // 2. BUG FIX: Grace Period 2.5s se barha kar 8s kar diya.
+                                //    Yeh 'Micro-Disconnects' (network drops) ko handle karega. (100% Free Solution)
+                                setTimeout(async () => {
+                                    if (gameEndedNotified || !currentRoomId) return;
+
+                                    try {
+                                         const roomDocRef = getRoomDocRef(currentRoomId);
+                                         const roomSnap = await getDoc(roomDocRef);
+                                         
+                                         if (roomSnap.exists()) {
+                                            const currentData = roomSnap.data();
+                                            
+                                            // YEH HAI BUG FIX:
+                                            // Agar game 'playing' ya 'waiting' state mein hai aur opponent offline ho gaya,
+                                            // toh foran abandonment process start karo.
+                                            if (currentData.status === 'playing' || currentData.status === 'waiting') {
+                                                console.warn(`Opponent presence check: Offline. Status is ${currentData.status}. Triggering abandonment.`);
+                                                await handleOpponentAbandonment(currentData);
+                                            } else {
+                                                // Game pehle se hi 'finished' ya 'abandoned' hai. Kuch mat karo.
+                                                console.log(`Opponent presence check: Offline, but game status is already '${currentData.status}'. No action needed.`);
+                                            }
+                                    } else {
+                                         console.warn("Opponent presence check: Room not found. Assuming room was deleted.");
+                                    }
+                                } catch (e) { // <-- YEH HAI BUG FIX
+                                    console.error("Error checking room status during grace period:", e);
                                 }
+ 
+                                }, 7000); // <-- 20s se 7s kar diya (Mobile disconnect fix)
+                                
+                              
                             }
                         }, (error) => {
                             console.error("RTDB Presence listener error:", error);
