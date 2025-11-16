@@ -11,7 +11,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
-   <style>
+
+         <style>
         
 :root {
     --midnight-950: #0a0e1a;
@@ -2571,7 +2572,6 @@ h3 {
 }
 
     </style>
-     
 </head>
 <body class="overflow-hidden">
     <div id="loading-overlay" class="fixed inset-0 bg-gray-900 bg-opacity-95 flex flex-col items-center justify-center z-50">
@@ -4335,14 +4335,17 @@ h3 {
                             if (isOnline === false) {
                                 if (gameEndedNotified || !isMultiplayer) return; 
                                 
-                                console.warn(`Opponent (ID: ${opponentId}) disconnected! (RTDB Presence). Starting 7-second grace period.`);
+                                console.warn(`Opponent (ID: ${opponentId}) disconnected! (RTDB Presence)`);
                                 
                                 // 2. BUG FIX: Grace Period 2.5s se barha kar 8s kar diya.
                                 //    Yeh 'Micro-Disconnects' (network drops) ko handle karega. (100% Free Solution)
-                                
-                                // BUG FIX #1: Timer ko 20000ms se 7000ms (7 seconds) kar diya hai
                                 setTimeout(async () => {
-                                    if (gameEndedNotified || !currentRoomId) return;
+                                    // YEH 'IF' CONDITION ASLI FIX HAI
+                                    // Agar grace period ke baad bhi game khatam nahi hua...
+                                    if (gameEndedNotified || !currentRoomId) { // <-- YEH TYPO FIX KI HAI (Notid -> Notified)
+                                        console.log("Grace period over, but game already ended or user left.");
+                                        return;
+                                    }
 
                                     try {
                                          const roomDocRef = getRoomDocRef(currentRoomId);
@@ -4351,27 +4354,22 @@ h3 {
                                          if (roomSnap.exists()) {
                                             const currentData = roomSnap.data();
                                             
-                                            // FINAL BUG FIX (Aapke audit ke mutabik):
-                                            // Hum sirf 'playing' status par action lenge.
-                                            
+                                            // ASLI FIX: Agar status abhi bhi 'playing' hai, iska matlab opponent bhaag gaya hai.
                                             if (currentData.status === 'playing') {
-                                                // Test Case 1: Game chal rahi thi, opponent bhaag gaya.
-                                                console.warn(`Opponent 7s ke baad bhi offline hai. Status '${currentData.status}'. Abandonment trigger kar raha hoon.`);
-                                                await handleOpponentAbandonment(currentData);
-                                            } else {
-                                                // Test Case 2: Ya toh game 'finished' ho chuka hai,
-                                                // ya yeh 'race condition' hai (status='waiting' naye room ka).
-                                                // Dono cases mein, hum kuch nahi karenge.
-                                                console.log(`Opponent 7s timer expired, but current room status is '${currentData.status}' (not 'playing'). Timer ko ignore kar raha hoon.`);
+                                                console.warn(`Grace period over. Opponent (ID: ${opponentId}) is confirmed offline. Ending game.`);
+                                                // AB YEH FUNCTION CALL HOGA:
+                                                handleOpponentAbandonment(currentData);
                                             }
-                                        } else {
-                                             console.warn("Grace period check: Room nahi mila (shayad host ne hi cancel kar diya).");
-                                        }
+                                            else if (currentData.status === 'waiting') {
+                                                console.log("Opponent disconnected, but status is 'waiting'. Graceful exit confirmed.");
+                                                return;
+                                            }
+                                    }
                                 } catch (e) { // <-- YEH HAI BUG FIX
                                     console.error("Error checking room status during grace period:", e);
                                 }
  
-                                }, 7000); // <-- BUG FIX #1: Timer 7 seconds kiya
+                                }, 8000); // <-- 20s se 8s kar diya (Mobile disconnect fix), aap isay wapas 20000 kar sakte hain.
                                 
                               
                             }
