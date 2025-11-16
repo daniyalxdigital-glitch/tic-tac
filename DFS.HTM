@@ -11,7 +11,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
- <style>
+
+       <style>
         
 :root {
     --midnight-950: #0a0e1a;
@@ -2571,7 +2572,6 @@ h3 {
 }
 
     </style>
-     
 </head>
 <body class="overflow-hidden">
     <div id="loading-overlay" class="fixed inset-0 bg-gray-900 bg-opacity-95 flex flex-col items-center justify-center z-50">
@@ -2982,7 +2982,7 @@ h3 {
             
             import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, deleteDoc, runTransaction, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
             
-            import { getDatabase, ref, onValue, set, onDisconnect, push, remove, get } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
+            import { getDatabase, ref, onValue, set, onDisconnect, push, remove } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
             import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
             
             let app;
@@ -4335,12 +4335,11 @@ h3 {
                             if (isOnline === false) {
                                 if (gameEndedNotified || !isMultiplayer) return; 
                                 
-                                console.warn(`Opponent (ID: ${opponentId}) disconnected! Starting 7-second grace period.`);
+                                console.warn(`Opponent (ID: ${opponentId}) disconnected! (RTDB Presence)`);
                                 
                                 // 2. BUG FIX: Grace Period 2.5s se barha kar 8s kar diya.
                                 //    Yeh 'Micro-Disconnects' (network drops) ko handle karega. (100% Free Solution)
-                                setTimeout(async () => { // <--- HERE IS THE TIMER
-                                    // Yahan ek typo tha 'gameEndedNottified', woh bhi fix kar diya hai
+                                setTimeout(async () => {
                                     if (gameEndedNotified || !currentRoomId) return;
 
                                     try {
@@ -4350,29 +4349,16 @@ h3 {
                                          if (roomSnap.exists()) {
                                             const currentData = roomSnap.data();
                                             
-                                            // Agar game 'playing' state mah nahi hai (e.g., waiting, finished), toh kuch mat karo
-                                            if (currentData.status !== 'playing') {
-                                                console.log("Opponent disconnected, but game is not in 'playing' state. No action taken.");
+                                            if (currentData.status === 'waiting') {
+                                                console.log("Opponent disconnected, but status is 'waiting'. Graceful exit confirmed.");
                                                 return;
                                             }
-                                            
-                                            // Grace period kah bad, opponent ka status dobara check karo (using 'get')
-                                            const currentPresenceSnap = await get(opponentStatusRef);
-                                            const isOpponentStillOffline = (currentPresenceSnap.val() === false);
-                                            
-                                            if (isOpponentStillOffline) {
-                                                console.warn("Grace period over. Opponent is still offline. Triggering abandonment.");
-                                                // Yahan hum game ko end karte hain
-                                                handleOpponentAbandonment(currentData);
-                                            } else {
-                                                console.log("Opponent reconnected within the grace period. Game continues.");
-                                            }
-                                        }
-                                    } catch (e) { // <-- YEH HAI BUG FIX
-                                        console.error("Error checking room status during grace period:", e);
                                     }
+                                } catch (e) { // <-- YEH HAI BUG FIX
+                                    console.error("Error checking room status during grace period:", e);
+                                }
  
-                                }, 7000); // <-- 20s se 7s kar diya (Aapke request par)
+                                }, 20000); // <-- 8s se 20s kar diya (Mobile disconnect fix)
                                 
                               
                             }
