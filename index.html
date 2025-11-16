@@ -12,7 +12,7 @@
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
 
-         <style>
+       <style>
         
 :root {
     --midnight-950: #0a0e1a;
@@ -2572,6 +2572,7 @@ h3 {
 }
 
     </style>
+     
 </head>
 <body class="overflow-hidden">
     <div id="loading-overlay" class="fixed inset-0 bg-gray-900 bg-opacity-95 flex flex-col items-center justify-center z-50">
@@ -2982,7 +2983,7 @@ h3 {
             
             import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, deleteDoc, runTransaction, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
             
-            import { getDatabase, ref, onValue, set, onDisconnect, push, remove } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
+            import { getDatabase, ref, onValue, set, onDisconnect, push, remove, get } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
             import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
             
             let app;
@@ -4335,17 +4336,43 @@ h3 {
                             if (isOnline === false) {
                                 if (gameEndedNotified || !isMultiplayer) return; 
                                 
-                                console.warn(`Opponent (ID: ${opponentId}) disconnected! (RTDB Presence)`);
+                                console.warn(`Opponent (ID: ${opponentId}) disconnected! (RTDB Presence). Starting 10s grace period.`);
                                 
-                                // 2. BUG FIX: Grace Period 2.5s se barha kar 8s kar diya.
-                                //    Yeh 'Micro-Disconnects' (network drops) ko handle karega. (100% Free Solution)
+                                // Grace period
                                 setTimeout(async () => {
                                     // YEH 'IF' CONDITION ASLI FIX HAI
                                     // Agar grace period ke baad bhi game khatam nahi hua...
-                                    if (gameEndedNotified || !currentRoomId) { // <-- YEH TYPO FIX KI HAI (Notid -> Notified)
+                                    if (gameEndedNotified || !currentRoomId) {
                                         console.log("Grace period over, but game already ended or user left.");
                                         return;
                                     }
+
+                                    // ***** NAYA FIX (NEW FIX) *****
+                                    // Grace period khatam hone ke baad, opponent ki status dobara check karo.
+                                    // Ho sakta hai woh wapas online aa gaya ho (mobile network drop).
+                                    console.log(`Grace period over for ${opponentId}. Re-checking online status...`);
+                                    let isStillOffline = false;
+                                    try {
+                                        const latestSnapshot = await get(opponentStatusRef);
+                                        if (latestSnapshot.val() === false) {
+                                            isStillOffline = true;
+                                        }
+                                    } catch (e) {
+                                        console.error("Error during RTDB 'get' check:", e);
+                                        // Agar check fail ho, toh assume karo offline hai
+                                        isStillOffline = true; 
+                                    }
+
+                                    if (!isStillOffline) {
+                                        // Opponent wapas aa gaya!
+                                        console.log(`Opponent (ID: ${opponentId}) reconnected within grace period. Game continues.`);
+                                        return; // Disconnect ko cancel karo
+                                    }
+                                    
+                                    // ***** FIX KHATAM (FIX END) *****
+                                    
+                                    // Agar opponent abhi bhi offline hai, toh game khatam karo.
+                                    console.warn(`Opponent (ID: ${opponentId}) is confirmed offline. Checking room status...`);
 
                                     try {
                                          const roomDocRef = getRoomDocRef(currentRoomId);
@@ -4356,7 +4383,7 @@ h3 {
                                             
                                             // ASLI FIX: Agar status abhi bhi 'playing' hai, iska matlab opponent bhaag gaya hai.
                                             if (currentData.status === 'playing') {
-                                                console.warn(`Grace period over. Opponent (ID: ${opponentId}) is confirmed offline. Ending game.`);
+                                                console.warn(`Room status is 'playing'. Opponent (ID: ${opponentId}) confirmed offline. Ending game.`);
                                                 // AB YEH FUNCTION CALL HOGA:
                                                 handleOpponentAbandonment(currentData);
                                             }
@@ -4365,13 +4392,15 @@ h3 {
                                                 return;
                                             }
                                     }
-                                } catch (e) { // <-- YEH HAI BUG FIX
+                                } catch (e) { 
                                     console.error("Error checking room status during grace period:", e);
                                 }
  
-                                }, 8000); // <-- 20s se 8s kar diya (Mobile disconnect fix), aap isay wapas 20000 kar sakte hain.
+                                }, 10000); // Grace period ko 8s se 10s kar diya hai, mobile ke liye.
                                 
                               
+                            } else if (isOnline === true) {
+                                console.log(`Opponent (ID: ${opponentId}) is confirmed online. (RTDB Presence)`);
                             }
                         }, (error) => {
                             console.error("RTDB Presence listener error:", error);
