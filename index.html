@@ -11,7 +11,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
- <style>
+
+       <style>
         
 :root {
     --midnight-950: #0a0e1a;
@@ -4332,10 +4333,12 @@ h3 {
                             
                             // 1. BUG FIX: Ab 'null' (loading) ko 'false' (offline) nahi samjhega.
                             //    Yeh aapke 'Race Condition' (null value) wale bug ko fix karta hai.
-                            if (isOnline === false) {
+                            // 2. BUG FIX (Mobile): Check '!= true' ke liye, na ki '=== false' ke liye.
+                            //    'null' ya 'undefined' ko bhi 'offline' mana jayega.
+                            if (isOnline !== true) { // <--- YEH HAI CHANGE
                                 if (gameEndedNotified || !isMultiplayer) return; 
                                 
-                                console.warn(`Opponent (ID: ${opponentId}) disconnected! Starting 7-second grace period.`);
+                                console.warn(`Opponent (ID: ${opponentId}) disconnected (value: ${isOnline})! Starting 7-second grace period.`);
                                 
                                 // 2. BUG FIX: Grace Period 2.5s se barha kar 8s kar diya.
                                 //    Yeh 'Micro-Disconnects' (network drops) ko handle karega. (100% Free Solution)
@@ -4358,7 +4361,8 @@ h3 {
                                             
                                             // Grace period kah bad, opponent ka status dobara check karo (using 'get')
                                             const currentPresenceSnap = await get(opponentStatusRef);
-                                            const isOpponentStillOffline = (currentPresenceSnap.val() === false);
+                                            // BUG FIX (Mobile): Yahan bhi '!= true' check karo.
+                                            const isOpponentStillOffline = (currentPresenceSnap.val() !== true); // <--- YEH HAI CHANGE
                                             
                                             if (isOpponentStillOffline) {
                                                 console.warn("Grace period over. Opponent is still offline. Triggering abandonment.");
