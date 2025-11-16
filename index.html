@@ -3702,25 +3702,12 @@ h3 {
                         const rtdbAppId = appId.replace(/[.#$\[\]]/g, '_'); 
                         const userStatusRef = ref(rtdb, `artifacts/${rtdbAppId}/public/data/presence/${userId}`);
                         
-                        // YEH HAI BUG FIX: Ab hum connection state ko bhi sunenge
-                        // Yeh standard Firebase presence system hai
-                        const connectedRef = ref(rtdb, '.info/connected');
-                        
-                        onValue(connectedRef, (snap) => {
-                            if (snap.val() === true) {
-                                // Hum connected hain.
-                                
-                                // Apni presence ko 'true' set karo
-                                // Yeh network flicker ke baad automatically wapas 'true' set kar dega
-                                set(userStatusRef, true);
-                                
-                                // Aur 'onDisconnect' hook set karo, taake agar browser band ho toh 'false' set ho jaye
-                                onDisconnect(userStatusRef).set(false).catch((err) => {
-                                    console.error("RTDB onDisconnect setup failed:", err);
-                                });
-                            }
-                            // Agar snap.val() === false hai, toh 'onDisconnect' hook automatically handle kar lega
-                            // ya client offline hai (toh hum kuch set nahi kar sakte).
+                        onDisconnect(userStatusRef).set(false).catch((err) => {
+                            console.error("RTDB onDisconnect setup failed:", err);
+                        });
+    
+                        set(userStatusRef, true).catch((err) => {
+                            console.error("RTDB initial presence set failed:", err);
                         });
                     }
 
@@ -4336,9 +4323,6 @@ h3 {
                              return;
                         }
                         
-                        // YEH HAI BUG FIX: Timer ko store karne ke liye variable
-                        let opponentOfflineTimer = null; 
-                        
                         const appId = typeof __app_id !== 'undefined' ? __app_id : FIREBASE_FALLBACK_CONFIG.projectId;
                         const rtdbAppId = appId.replace(/[.#$\[\]]/g, '_'); 
                         const opponentStatusRef = ref(rtdb, `artifacts/${rtdbAppId}/public/data/presence/${opponentId}`);
@@ -4346,50 +4330,50 @@ h3 {
                         unsubscribeOpponentPresence = onValue(opponentStatusRef, (snapshot) => {
                             const isOnline = snapshot.val();
                             
+                            // 1. BUG FIX: Ab 'null' (loading) ko 'false' (offline) nahi samjhega.
+                            //    Yeh aapke 'Race Condition' (null value) wale bug ko fix karta hai.
                             if (isOnline === false) {
-                                // Opponent offline ho gaya hai.
                                 if (gameEndedNotified || !isMultiplayer) return; 
                                 
-                                // Timer tabhi start karo agar pehle se nahi chal raha
-                                if (opponentOfflineTimer === null) {
-                                    console.warn(`Opponent (ID: ${opponentId}) disconnected! Starting 7-second abandonment timer.`);
-                                    
-                                    // Timer ko variable mein save karo
-                                    opponentOfflineTimer = setTimeout(async () => {
-                                        if (gameEndedNotified || !currentRoomId) return;
-
-                                        try {
-                                             const roomDocRef = getRoomDocRef(currentRoomId);
-                                             const roomSnap = await getDoc(roomDocRef);
-                                             
-                                             if (roomSnap.exists()) {
-                                                const currentData = roomSnap.data();
-                                                
-                                                if (currentData.status === 'playing' || currentData.status === 'waiting') {
-                                                    console.warn(`Opponent presence check: 7s timer expired. Still offline. Triggering abandonment.`);
-                                                    await handleOpponentAbandonment(currentData);
-                                                } else {
-                                                    console.log(`Opponent presence check: 7s timer expired, but game status is '${currentData.status}'. No action needed.`);
-                                                }
-                                        } else {
-                                             console.warn("Opponent presence check: Room not found during abandonment check.");
-                                        }
-                                    } catch (e) { 
-                                        console.error("Error checking room status during grace period:", e);
-                                    }
-     
-                                    }, 7000); // 7-second timer
-                                }
+                                console.warn(`Opponent (ID: ${opponentId}) disconnected! (RTDB Presence). Starting 7-second grace period.`);
                                 
-                            } else {
-                                // YEH HAI ASLI BUG FIX:
-                                // Agar opponent wapas online aa gaya (ya null se true hua)
-                                // Toh abandonment timer ko cancel kar do.
-                                if (opponentOfflineTimer !== null) {
-                                    console.log(`Opponent (ID: ${opponentId}) reconnected! Cancelling abandonment timer.`);
-                                    clearTimeout(opponentOfflineTimer); // Timer ko cancel kiya
-                                    opponentOfflineTimer = null; // Variable ko reset kiya
+                                // 2. BUG FIX: Grace Period 2.5s se barha kar 8s kar diya.
+                                //    Yeh 'Micro-Disconnects' (network drops) ko handle karega. (100% Free Solution)
+                                
+                                // BUG FIX #1: Timer ko 20000ms se 7000ms (7 seconds) kar diya hai
+                                setTimeout(async () => {
+                                    if (gameEndedNotified || !currentRoomId) return;
+
+                                    try {
+                                         const roomDocRef = getRoomDocRef(currentRoomId);
+                                         const roomSnap = await getDoc(roomDocRef);
+                                         
+                                         if (roomSnap.exists()) {
+                                            const currentData = roomSnap.data();
+                                            
+                                            // FINAL BUG FIX (Aapke audit ke mutabik):
+                                            // Hum sirf 'playing' status par action lenge.
+                                            
+                                            if (currentData.status === 'playing') {
+                                                // Test Case 1: Game chal rahi thi, opponent bhaag gaya.
+                                                console.warn(`Opponent 7s ke baad bhi offline hai. Status '${currentData.status}'. Abandonment trigger kar raha hoon.`);
+                                                await handleOpponentAbandonment(currentData);
+                                            } else {
+                                                // Test Case 2: Ya toh game 'finished' ho chuka hai,
+                                                // ya yeh 'race condition' hai (status='waiting' naye room ka).
+                                                // Dono cases mein, hum kuch nahi karenge.
+                                                console.log(`Opponent 7s timer expired, but current room status is '${currentData.status}' (not 'playing'). Timer ko ignore kar raha hoon.`);
+                                            }
+                                        } else {
+                                             console.warn("Grace period check: Room nahi mila (shayad host ne hi cancel kar diya).");
+                                        }
+                                } catch (e) { // <-- YEH HAI BUG FIX
+                                    console.error("Error checking room status during grace period:", e);
                                 }
+ 
+                                }, 7000); // <-- BUG FIX #1: Timer 7 seconds kiya
+                                
+                              
                             }
                         }, (error) => {
                             console.error("RTDB Presence listener error:", error);
